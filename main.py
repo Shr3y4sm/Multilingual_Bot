@@ -9,6 +9,13 @@ import google.generativeai as genai
 import re
 from dotenv import load_dotenv
 
+# Import lip sync utilities
+try:
+    from lip_sync_utils import create_lip_sync_video, get_expression_for_text, ExpressionAnimator
+    LIP_SYNC_AVAILABLE = True
+except ImportError:
+    LIP_SYNC_AVAILABLE = False
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -44,6 +51,20 @@ if 'session_id' not in st.session_state:
     st.session_state.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 if 'conversation_context' not in st.session_state:
     st.session_state.conversation_context = []
+if 'generated_videos' not in st.session_state:
+    st.session_state.generated_videos = []  # Track generated video files
+if 'current_video_id' not in st.session_state:
+    st.session_state.current_video_id = None  # Current video identifier
+if 'last_video_path' not in st.session_state:
+    st.session_state.last_video_path = None  # Last displayed video path
+if 'last_audio_path' not in st.session_state:
+    st.session_state.last_audio_path = None  # Last audio path
+if 'last_expression' not in st.session_state:
+    st.session_state.last_expression = None  # Last detected expression
+if 'clear_input' not in st.session_state:
+    st.session_state.clear_input = False  # Flag to clear input on next render
+if 'clear_input' not in st.session_state:
+    st.session_state.clear_input = False  # Flag to clear input on next render
 
 def initialize_gemini():
     """Initialize Google Gemini AI"""
@@ -194,25 +215,195 @@ def speech_to_text():
             st.error("❌ No speech detected. Try again.")
     return None
 
-def text_to_speech(text, language):
-    """Convert text to speech and play AI Assistant Video"""
+def cleanup_old_videos(max_age_seconds=300):
+    """Clean up old generated video files"""
     try:
+        import time
+        current_time = time.time()
+        for video_file in st.session_state.generated_videos.copy():
+            if os.path.exists(video_file):
+                file_age = current_time - os.path.getmtime(video_file)
+                if file_age > max_age_seconds:  # Delete files older than 5 minutes
+                    try:
+                        os.remove(video_file)
+                        st.session_state.generated_videos.remove(video_file)
+                    except:
+                        pass
+            else:
+                # Remove from list if file doesn't exist
+                st.session_state.generated_videos.remove(video_file)
+    except:
+        pass
+
+def text_to_speech(text, language, enable_lip_sync=True, auto_generate=True, ai_model=None):
+    """
+    Convert text to speech and auto-generate AI Assistant Video with accurate lip sync and emotions
+    
+    Args:
+        text: Text to convert to speech
+        language: Language code for TTS
+        enable_lip_sync: Enable lip sync generation
+        auto_generate: Automatically generate video (no button needed)
+        ai_model: Optional AI model for better emotion detection
+    """
+    try:
+        # Clean up old videos first
+        cleanup_old_videos()
+        
+        # Generate audio with absolute path
         tts = gTTS(text, lang=language)
-        audio_file = "output.mp3"
+        audio_file = os.path.abspath("output.mp3")
         tts.save(audio_file)
 
-        # Show AI Assistant Video while speaking
-        col1, col2 = st.columns([3, 1])
-        with col2:
-            if os.path.exists(ASSISTANT_VIDEO_PATH):
-                st.video(ASSISTANT_VIDEO_PATH)
-            else:
-                st.info("🎭 Avatar video not found. Please add girl.gif.mp4")
+        # Detect emotion with AI-enhanced analysis
+        expression_video = ASSISTANT_VIDEO_PATH
+        detected_expression = "neutral"
+        
+        if LIP_SYNC_AVAILABLE:
+            from lip_sync_utils import ExpressionAnimator
+            animator = ExpressionAnimator()
+            # Use AI for better emotion detection if available
+            detected_expression = animator.detect_expression(text, use_ai=(ai_model is not None), ai_model=ai_model)
+            expression_video = animator.get_expression_video_path(detected_expression)
+        
+        # Auto-generate lip-synced video if enabled
+        # Ensure we have a valid video file to start with
+        if not os.path.exists(expression_video):
+            expression_video = ASSISTANT_VIDEO_PATH
+        
+        # Always set video_file to a valid path if expression_video exists
+        if os.path.exists(expression_video):
+            video_file = os.path.abspath(expression_video)
+        elif os.path.exists(ASSISTANT_VIDEO_PATH):
+            video_file = os.path.abspath(ASSISTANT_VIDEO_PATH)
+        else:
+            video_file = None
+        
+        if enable_lip_sync and LIP_SYNC_AVAILABLE and video_file:
+            try:
+                # Check which API is configured (priority: D-ID > HeyGen > Synthesia > Elai)
+                did_api_key = os.getenv("DID_API_KEY", "")
+                heygen_api_key = os.getenv("HEYGEN_API_KEY", "")
+                synthesia_api_key = os.getenv("SYNTHESIA_API_KEY", "")
+                elai_api_key = os.getenv("ELAI_API_KEY", "")
+                
+                use_api = False
+                api_provider = "heygen"
+                api_key = None
+                avatar_id = None
+                
+                if did_api_key:
+                    use_api = True
+                    api_provider = "d-id"
+                    api_key = did_api_key
+                    avatar_id = os.getenv("DID_AVATAR_ID", "")
+                elif heygen_api_key:
+                    use_api = True
+                    api_provider = "heygen"
+                    api_key = heygen_api_key
+                    avatar_id = os.getenv("HEYGEN_AVATAR_ID", "")
+                elif synthesia_api_key:
+                    use_api = True
+                    api_provider = "synthesia"
+                    api_key = synthesia_api_key
+                    avatar_id = os.getenv("SYNTHESIA_AVATAR_ID", "")
+                elif elai_api_key:
+                    use_api = True
+                    api_provider = "elai"
+                    api_key = elai_api_key
+                    avatar_id = os.getenv("ELAI_AVATAR_ID", "")
+                
+                api_name = api_provider.upper() if use_api else "Local"
+                with st.spinner(f"🎬 Generating {detected_expression} expression with lip sync..." + (f" (via {api_name} API)" if use_api else "")):
+                    # Use absolute path for output
+                    lip_sync_output = os.path.abspath(f"lip_sync_{st.session_state.session_id}_{datetime.now().strftime('%H%M%S')}.mp4")
+                    result = create_lip_sync_video(
+                        audio_file, 
+                        video_file, 
+                        lip_sync_output,
+                        use_api=use_api,
+                        api_provider=api_provider,
+                        api_key=api_key,
+                        avatar_id=avatar_id
+                    )
+                    if result and os.path.exists(result) and os.path.getsize(result) > 0:
+                        video_file = os.path.abspath(result)
+                        # Track generated video with absolute path
+                        if video_file not in st.session_state.generated_videos:
+                            st.session_state.generated_videos.append(video_file)
+                        st.success(f"✅ Generated {detected_expression} expression with lip sync!" + (f" ({api_name})" if use_api else ""))
+                    else:
+                        # Keep original video if lip sync fails
+                        st.info("ℹ️ Using original video")
+            except Exception as e:
+                st.warning(f"⚠️ Lip sync generation failed: {str(e)}. Using original video.")
 
-        # Play Audio
-        st.audio(audio_file, format="audio/mp3")
+        # Show AI Assistant Video while speaking
+        # Determine which video to show - ensure we always have a video if available
+        video_to_show = None
+        
+        # Priority: generated video > expression video > default avatar
+        if video_file and os.path.exists(video_file):
+            video_to_show = os.path.abspath(video_file)
+        elif os.path.exists(expression_video):
+            video_to_show = os.path.abspath(expression_video)
+        elif os.path.exists(ASSISTANT_VIDEO_PATH):
+            video_to_show = os.path.abspath(ASSISTANT_VIDEO_PATH)
+        
+        # Store in session state for persistence across reruns
+        if video_to_show:
+            st.session_state.last_video_path = video_to_show
+            st.session_state.last_audio_path = audio_file
+            st.session_state.last_expression = detected_expression
+        
+        # Display video and audio in columns
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            # Main content area - audio will be here too
+            pass
+        
+        with col2:
+            # Display video if available
+            if video_to_show and os.path.exists(video_to_show):
+                try:
+                    # Use Streamlit's native video player
+                    # Display video - ensure it's visible
+                    st.video(video_to_show, autoplay=True)
+                    
+                    # Show detected expression
+                    if LIP_SYNC_AVAILABLE:
+                        emoji_map = {
+                            "happy": "😊", "sad": "😢", "surprised": "😲", 
+                            "thinking": "🤔", "confident": "💪", "neutral": "😐"
+                        }
+                        emoji = emoji_map.get(detected_expression, "😊")
+                        st.caption(f"Expression: {detected_expression} {emoji}")
+                    
+                    # Play audio in the same column
+                    st.audio(audio_file, format="audio/mp3", autoplay=True)
+                except Exception as e:
+                    st.error(f"Video error: {str(e)}")
+                    st.audio(audio_file, format="audio/mp3", autoplay=True)
+            else:
+                # No video available - show debug info
+                if not os.path.exists(ASSISTANT_VIDEO_PATH):
+                    st.info("🎭 Avatar video not found. Please add `girl.gif.mp4` to project root.")
+                else:
+                    st.warning(f"⚠️ Video not accessible.")
+                    with st.expander("🔍 Debug Info"):
+                        st.write(f"video_file: {video_file}")
+                        st.write(f"expression_video: {expression_video}")
+                        st.write(f"ASSISTANT_VIDEO_PATH: {ASSISTANT_VIDEO_PATH}")
+                        st.write(f"video_to_show: {video_to_show}")
+                        st.write(f"File exists: {os.path.exists(ASSISTANT_VIDEO_PATH) if ASSISTANT_VIDEO_PATH else False}")
+                st.audio(audio_file, format="audio/mp3", autoplay=True)
+        
     except Exception as e:
         st.error(f"TTS Error: {e}")
+        # Fallback: just play audio
+        if os.path.exists(audio_file):
+            st.audio(audio_file, format="audio/mp3")
 
 def translate_text(text, target_lang):
     """Translate text using Google Translator"""
@@ -249,6 +440,21 @@ with st.sidebar:
         format_func=lambda x: f"{SUPPORTED_LANGUAGES[x]} ({x})",
         index=0
     )
+    
+    st.divider()
+    
+    # Lip Sync Settings
+    st.subheader("🎭 Animation Settings")
+    enable_lip_sync = st.checkbox(
+        "Enable Lip Sync & Expressions",
+        value=True,
+        help="Generate lip-synced animations with expressive reactions based on text sentiment"
+    )
+    
+    if LIP_SYNC_AVAILABLE:
+        st.success("✅ Lip sync features available")
+    else:
+        st.warning("⚠️ Install moviepy and mediapipe for lip sync: pip install moviepy mediapipe")
     
     st.divider()
     
@@ -301,6 +507,28 @@ with tab1:
                     st.write(entry['bot_response'])
                     st.caption(f"Session: {entry['session_id']}")
     
+    # Display last video if available (persists after rerun)
+    if 'last_video_path' in st.session_state and st.session_state.last_video_path:
+        if os.path.exists(st.session_state.last_video_path):
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                try:
+                    st.video(st.session_state.last_video_path, autoplay=False)
+                    
+                    if 'last_expression' in st.session_state and st.session_state.last_expression:
+                        emoji_map = {
+                            "happy": "😊", "sad": "😢", "surprised": "😲", 
+                            "thinking": "🤔", "confident": "💪", "neutral": "😐"
+                        }
+                        emoji = emoji_map.get(st.session_state.last_expression, "😊")
+                        st.caption(f"Expression: {st.session_state.last_expression} {emoji}")
+                    
+                    if 'last_audio_path' in st.session_state and st.session_state.last_audio_path:
+                        if os.path.exists(st.session_state.last_audio_path):
+                            st.audio(st.session_state.last_audio_path, format="audio/mp3", autoplay=False)
+                except Exception as e:
+                    st.error(f"Video display error: {str(e)}")
+    
     # Input method
     input_method = st.radio(
         "Choose input method:",
@@ -309,45 +537,64 @@ with tab1:
         key="chatbot_input_method"
     )
     
-    user_input = None
-    
-    if input_method == "📝 Type Text":
-        user_input = st.text_input("Type your message:", key="chat_input")
-    else:
-        if st.button("🎤 Start Speaking"):
-            recognized_text = speech_to_text()
-            if recognized_text:
-                user_input = recognized_text
-                st.session_state['recognized_text'] = recognized_text
-    
-    if 'recognized_text' in st.session_state and input_method == "🎤 Speak":
-        user_input = st.text_input("Recognized Speech:", value=st.session_state['recognized_text'], key="recognized_input")
-    
-    # Process user input
-    if user_input and st.button("💬 Send Message", type="primary"):
-        # Detect intent
-        intent = detect_intent(user_input)
+    # Use form to handle input clearing automatically
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_input = None
         
-        # Get AI response
-        with st.spinner("🤔 AI is thinking..."):
-            bot_response = get_ai_response(user_input, gemini_model, selected_language)
+        if input_method == "📝 Type Text":
+            user_input = st.text_input("Type your message:", key="chat_input_form")
+        else:
+            if st.form_submit_button("🎤 Start Speaking"):
+                recognized_text = speech_to_text()
+                if recognized_text:
+                    st.session_state['recognized_text'] = recognized_text
         
-        # Save to history
-        save_chat_entry(user_input, bot_response, selected_language, intent)
+        if 'recognized_text' in st.session_state and input_method == "🎤 Speak":
+            user_input = st.text_input("Recognized Speech:", value=st.session_state['recognized_text'], key="recognized_input_form")
         
-        # Display response
-        with st.chat_message("user"):
-            st.write(user_input)
-            st.caption(f"Intent: {intent}")
+        # Process user input
+        submitted = st.form_submit_button("💬 Send Message", type="primary")
         
-        with st.chat_message("assistant"):
-            st.write(bot_response)
+        if submitted and user_input and user_input.strip():
+            # Store the input temporarily
+            current_input = user_input.strip()
             
-            # Text to Speech option
-            if st.button("🔊 Speak Response", key="tts_chat"):
-                text_to_speech(bot_response, selected_language)
-        
-        st.rerun()
+            # Clear recognized text after processing
+            if 'recognized_text' in st.session_state:
+                del st.session_state['recognized_text']
+            
+            # Detect intent
+            intent = detect_intent(current_input)
+            
+            # Get AI response
+            with st.spinner("🤔 AI is thinking..."):
+                bot_response = get_ai_response(current_input, gemini_model, selected_language)
+            
+            # Save to history
+            save_chat_entry(current_input, bot_response, selected_language, intent)
+            
+            # Display response in chat
+            with st.chat_message("user"):
+                st.write(current_input)
+                st.caption(f"Intent: {intent}")
+            
+            with st.chat_message("assistant"):
+                st.write(bot_response)
+                
+                # Auto-generate video with emotion and lip sync
+                if enable_lip_sync and LIP_SYNC_AVAILABLE:
+                    # Automatically generate and display video
+                    text_to_speech(bot_response, selected_language, 
+                                 enable_lip_sync=enable_lip_sync, 
+                                 auto_generate=True, 
+                                 ai_model=gemini_model)
+                else:
+                    # Manual button if lip sync disabled
+                    if st.button("🔊 Speak Response", key=f"tts_chat_{len(st.session_state.chat_history)}"):
+                        text_to_speech(bot_response, selected_language, enable_lip_sync=False)
+            
+            # Rerun to refresh UI - form will auto-clear inputs
+            st.rerun()
 
 # Tab 2: Translation
 with tab2:
@@ -398,7 +645,11 @@ with tab2:
             if translated_text:
                 st.success(f"✅ **Translated Text ({SUPPORTED_LANGUAGES[target_lang]}):**")
                 st.info(translated_text)
-                text_to_speech(translated_text, target_lang)
+                # Auto-generate with emotion detection
+                text_to_speech(translated_text, target_lang, 
+                             enable_lip_sync=enable_lip_sync,
+                             auto_generate=True,
+                             ai_model=gemini_model)
 
 # Tab 3: Analytics
 with tab3:
