@@ -318,7 +318,7 @@ Respond with only the emotion word:"""
 
 def create_lip_sync_video(audio_file: str, avatar_file: str, output_file: str = "lip_sync_output.mp4", 
                          use_api: bool = False, api_provider: str = "heygen", 
-                         api_key: str = None, avatar_id: str = None) -> str:
+                         api_key: str = None, avatar_id: str = None, text_content: str = None) -> str:
     """
     Main function to create lip-synced video
     
@@ -330,6 +330,7 @@ def create_lip_sync_video(audio_file: str, avatar_file: str, output_file: str = 
         api_provider: API provider ("heygen", "d-id", "synthesia", "elai")
         api_key: API key for the provider
         avatar_id: Avatar ID for the provider
+        text_content: Text content for the speech (required for D-ID)
         
     Returns:
         str: Path to output file or None if failed
@@ -340,7 +341,7 @@ def create_lip_sync_video(audio_file: str, avatar_file: str, output_file: str = 
             from video_api_alternatives import VideoGenerationAPIs
             
             if api_provider == "d-id":
-                result = VideoGenerationAPIs.generate_with_did(audio_file, output_file, api_key, avatar_id)
+                result = VideoGenerationAPIs.generate_with_did(audio_file, output_file, api_key, avatar_id, text_content)
             elif api_provider == "synthesia":
                 result = VideoGenerationAPIs.generate_with_synthesia(audio_file, output_file, api_key, avatar_id)
             elif api_provider == "elai":

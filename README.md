@@ -7,41 +7,49 @@ What makes this bot unique is its integration of animated avatars that visually 
 ## ✨ Key Features
 
 🌍 **Real-time Language Translation using NMT**
+
 - Supports 16+ languages including English, Hindi, Kannada, Tamil, Telugu, and more
 - Automatic language detection
 - Neural Machine Translation for accurate translations
 
 🎤 **Voice Input and Output for hands-free communication**
+
 - Speech-to-Text recognition using Google Speech Recognition
 - Text-to-Speech synthesis with natural voice responses
 - Real-time voice processing
 
 🧠 **AI-Powered Chatbot with NLP-based conversation handling**
+
 - Powered by Google Gemini AI
 - Context-aware conversations
 - Intent detection (greeting, question, translation, conversation)
 - Multi-turn dialogue support
 
 🗣️ **Text-to-Speech Synthesis for natural voice responses**
+
 - Natural voice generation in multiple languages
 - Synchronized with animated avatar
 
 🎭 **Animated Avatar Interaction with lip-sync capabilities**
+
 - Visual avatar representation
 - Synchronized with speech output
 - Enhanced user engagement
 
 💬 **Multi-Lingual Support for global users**
+
 - 16+ languages supported
 - Easy language switching
 - Language-specific responses
 
 📜 **Chat History Logging for reference**
+
 - Complete conversation history
 - Session management
 - Analytics and insights
 
 📊 **Analytics Dashboard**
+
 - Intent distribution analysis
 - Language usage statistics
 - Session tracking
@@ -49,6 +57,7 @@ What makes this bot unique is its integration of animated avatars that visually 
 ## 🚀 Installation
 
 ### Prerequisites
+
 - Python 3.8 or higher
 - Microphone (for voice input)
 - Google Gemini API Key
@@ -56,27 +65,31 @@ What makes this bot unique is its integration of animated avatars that visually 
 ### Setup Steps
 
 1. **Clone the repository**
+
 ```bash
 git clone <repository-url>
 cd Animated-AI-translator
 ```
 
-2. **Install dependencies**
+1. **Install dependencies**
+
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **Set up Google Gemini API Key**
+1. **Set up Google Gemini API Key**
 
    **Option 1: Using .env File (Recommended)**
    - Create a file named `.env` in the project root
    - Add your API key:
+   
    ```env
    GEMINI_API_KEY=your-api-key-here
    ```
    - The application will automatically load it
 
    **Option 2: Environment Variable**
+   
    ```bash
    # Windows
    set GEMINI_API_KEY=your-api-key-here
@@ -86,17 +99,19 @@ pip install -r requirements.txt
    ```
 
    **Option 3: Streamlit Secrets** (create `.streamlit/secrets.toml`)
+   
    ```toml
    GEMINI_API_KEY = "your-api-key-here"
    ```
 
-   Get your API key from: https://makersuite.google.com/app/apikey
+   Get your API key from: [Google MakerSuite](https://makersuite.google.com/app/apikey)
 
-4. **Add Avatar Video (Optional)**
+1. **Add Avatar Video (Optional)**
    - Place your animated avatar video file as `girl.gif.mp4` in the project root
    - Or update `ASSISTANT_VIDEO_PATH` in `main.py` with your video path
 
-5. **Run the application**
+1. **Run the application**
+
 ```bash
 streamlit run main.py
 ```
@@ -104,6 +119,7 @@ streamlit run main.py
 ## 📖 Usage
 
 ### AI Chatbot Mode
+
 1. Select your preferred language from the sidebar
 2. Choose input method (Text or Voice)
 3. Type or speak your message
@@ -111,12 +127,14 @@ streamlit run main.py
 5. Use "Speak Response" to hear the AI's response
 
 ### Translation Mode
+
 1. Navigate to the "Translation" tab
 2. Enter text or use voice input
 3. Select source and target languages
 4. Click "Translate & Speak" to get translation and audio
 
 ### Analytics
+
 - View conversation statistics
 - Analyze intent distribution
 - Track language usage patterns
@@ -129,6 +147,75 @@ streamlit run main.py
 - **Speech Recognition**: Google Speech Recognition API
 - **Text-to-Speech**: Google Text-to-Speech (gTTS)
 - **Language Support**: 16+ languages
+
+## 🛰️ Offline / Low-Bandwidth Mode (Experimental)
+
+Offline mode lets the app operate with minimal or no internet connectivity for Speech-to-Text (STT), Text-to-Speech (TTS), and basic Translation.
+
+### Components
+
+- **STT**: Vosk (local speech recognition models)
+- **TTS**: pyttsx3 (system voices; English best, other languages depend on OS voices)
+- **Translation**: Argos Translate (installable language packs)
+
+### Install Optional Dependencies
+
+```powershell
+pip install vosk pyttsx3 argostranslate==1.9.0
+```
+
+### Download & Place Vosk Model
+
+1. Get a small model (e.g. English): <https://alphacephei.com/vosk/models>
+2. Extract into: `models/vosk/en/` so the path contains files like `conf`, `am`, etc.
+3. (Optional) Set a custom path:
+```powershell
+$Env:VOSK_MODEL_PATH = "models/vosk/en"
+```
+
+### Install Argos Translate Language Packs
+1. Download `.argosmodel` files (e.g. English–Hindi) from: https://github.com/argosopentech/argos-translate
+2. Install each pack:
+```powershell
+python -m argostranslate.package install .\en_hi.argosmodel
+python -m argostranslate.package install .\en_es.argosmodel
+```
+3. Verify installed packs by running the app and enabling offline mode.
+
+### Enable Offline Mode in the App
+1. Start the app:
+```powershell
+streamlit run main.py
+```
+2. Open sidebar → check: **Enable Offline Mode (Experimental)**.
+3. Capability summary shows which parts initialized (`vosk`, `pyttsx3`, `argos`). Missing items display setup guidance.
+
+### Testing Checklist
+| Feature | Action | Expected |
+|---------|--------|----------|
+| Offline STT | Select input method "🎤 Offline STT", speak | Transcribed text appears or warning if model missing |
+| Fallback STT | Disable offline or remove model | Cloud Google STT used instead |
+| Offline TTS | Send message → response speaks | Uses system voice (less natural than gTTS) |
+| Fallback TTS | Disable offline mode | gTTS mp3 generated as before |
+| Offline Translation | Use "Translate & Speak" with offline enabled | Translation succeeds via Argos if pack installed |
+| Fallback Translation | Remove Argos pack | Falls back to GoogleTranslator API |
+
+### Simulate Low Bandwidth
+- Disconnect network or block outbound temporarily; offline components continue to work (Gemini responses will fail—demo fallback by prompting cached or simplified responses if needed).
+- For a fully offline demo, avoid using Chatbot tab or replace with a local FAQ answer set.
+
+### Tips & Limitations
+- Argos translation quality is lower than neural cloud services; highlight educational access benefit.
+- pyttsx3 voice availability varies by OS; for richer voices keep gTTS as hybrid.
+- Vosk supports multiple languages—add more models in parallel folders and extend detection logic.
+- Heuristic auto language detection in offline translation falls back to English vs Hindi; refine later.
+
+### Roadmap Upgrades (Future)
+- Whisper.cpp integration for higher-quality offline STT.
+- Coqui TTS for multilingual neural voices offline.
+- Better language auto-detect (character script + frequency models).
+- Local intent classification to replace Gemini in offline classrooms.
+
 
 ## 📁 Project Structure
 

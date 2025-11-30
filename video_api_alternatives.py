@@ -13,40 +13,50 @@ class VideoGenerationAPIs:
     """Collection of free video generation API implementations"""
     
     @staticmethod
-    def generate_with_did(audio_file: str, output_file: str, api_key: str, avatar_id: str = None) -> Optional[str]:
+    def generate_with_did(audio_file: str, output_file: str, api_key: str, avatar_id: str = None, text_content: str = None) -> Optional[str]:
         """
         Generate video using D-ID API (Free tier: 20 credits/month)
         https://www.d-id.com/
         
         Args:
-            audio_file: Path to audio file
+            audio_file: Path to audio file (for reference, D-ID uses text input)
             output_file: Output file path
             api_key: D-ID API key
             avatar_id: D-ID avatar ID (optional)
+            text_content: Text content to speak (required for D-ID)
             
         Returns:
             str: Path to output file or None if failed
         """
         try:
+            # D-ID requires text input, not audio file
+            if not text_content:
+                print("D-ID API requires text content")
+                return None
+            
             # D-ID API endpoint
             api_url = "https://api.d-id.com/talks"
             
-            # Read audio file
-            with open(audio_file, 'rb') as f:
-                audio_data = f.read()
-            
-            # Prepare request
+            # Prepare request headers
             headers = {
                 "Authorization": f"Basic {api_key}",
                 "Content-Type": "application/json"
             }
             
-            # Create talk request
+            # Create talk request with text-to-speech
             payload = {
                 "source_url": avatar_id or "https://d-id-public-bucket.s3.amazonaws.com/alice.jpg",
                 "script": {
-                    "type": "audio",
-                    "audio_url": audio_file  # You may need to upload audio first
+                    "type": "text",
+                    "input": text_content,
+                    "provider": {
+                        "type": "microsoft",
+                        "voice_id": "en-US-JennyNeural"
+                    }
+                },
+                "config": {
+                    "fluent": True,
+                    "pad_audio": 0.0
                 }
             }
             
@@ -64,7 +74,9 @@ class VideoGenerationAPIs:
                     status_response = requests.get(status_url, headers=headers)
                     if status_response.status_code == 200:
                         status_data = status_response.json()
-                        if status_data.get("status") == "done":
+                        status = status_data.get("status")
+                        
+                        if status == "done":
                             video_url = status_data.get("result_url")
                             if video_url:
                                 # Download video
@@ -73,8 +85,9 @@ class VideoGenerationAPIs:
                                     with open(output_file, 'wb') as f:
                                         f.write(video_response.content)
                                     return output_file
-                        elif status_data.get("status") == "error":
-                            print(f"D-ID API error: {status_data.get('error')}")
+                        elif status == "error":
+                            error_msg = status_data.get("error", {}).get("description", "Unknown error")
+                            print(f"D-ID API error: {error_msg}")
                             return None
             else:
                 print(f"D-ID API error: {response.status_code} - {response.text}")

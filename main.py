@@ -9,6 +9,20 @@ import google.generativeai as genai
 import re
 from dotenv import load_dotenv
 
+# Offline utilities (lazy import, guard if file not present)
+try:
+    from offline_utils import (
+        initialize_offline_resources,
+        offline_stt,
+        offline_tts,
+        offline_translate,
+        is_offline_mode,
+        capabilities_summary,
+    )
+    OFFLINE_UTILS_AVAILABLE = True
+except ImportError:
+    OFFLINE_UTILS_AVAILABLE = False
+
 # Import lip sync utilities
 try:
     from lip_sync_utils import create_lip_sync_video, get_expression_for_text, ExpressionAnimator
@@ -199,6 +213,12 @@ def load_translation_history():
 
 def speech_to_text():
     """Convert speech to text"""
+    # If offline mode toggled and offline utilities available, use offline STT first
+    if OFFLINE_UTILS_AVAILABLE and is_offline_mode():
+        text = offline_stt()
+        if text:
+            return text
+        # Fall through to cloud STT if offline failed
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
         st.info("🎤 Speak now...")
@@ -250,10 +270,16 @@ def text_to_speech(text, language, enable_lip_sync=True, auto_generate=True, ai_
         # Clean up old videos first
         cleanup_old_videos()
         
-        # Generate audio with absolute path
-        tts = gTTS(text, lang=language)
+        # Generate audio with absolute path (offline first if enabled)
         audio_file = os.path.abspath("output.mp3")
-        tts.save(audio_file)
+        offline_used = False
+        if OFFLINE_UTILS_AVAILABLE and is_offline_mode():
+            offline_path = offline_tts(text, language, output_file=audio_file)
+            if offline_path and os.path.exists(offline_path):
+                offline_used = True
+        if not offline_used:
+            tts = gTTS(text, lang=language)
+            tts.save(audio_file)
 
         # Detect emotion with AI-enhanced analysis
         expression_video = ASSISTANT_VIDEO_PATH
@@ -324,7 +350,8 @@ def text_to_speech(text, language, enable_lip_sync=True, auto_generate=True, ai_
                         use_api=use_api,
                         api_provider=api_provider,
                         api_key=api_key,
-                        avatar_id=avatar_id
+                        avatar_id=avatar_id,
+                        text_content=text  # Pass the text for D-ID API
                     )
                     if result and os.path.exists(result) and os.path.getsize(result) > 0:
                         video_file = os.path.abspath(result)
@@ -408,6 +435,12 @@ def text_to_speech(text, language, enable_lip_sync=True, auto_generate=True, ai_
 def translate_text(text, target_lang):
     """Translate text using Google Translator"""
     try:
+        # Offline first if enabled
+        if OFFLINE_UTILS_AVAILABLE and is_offline_mode():
+            offline_result = offline_translate(text, src_lang='auto', tgt_lang=target_lang)
+            if offline_result:
+                save_translation(text, offline_result, "auto-detected-offline", target_lang)
+                return offline_result
         translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
         save_translation(text, translated, "auto-detected", target_lang)
         return translated
@@ -440,6 +473,38 @@ with st.sidebar:
         format_func=lambda x: f"{SUPPORTED_LANGUAGES[x]} ({x})",
         index=0
     )
+
+    # Offline Mode Toggle
+    st.subheader("🛰️ Offline / Low-Bandwidth Mode")
+    offline_mode_enabled = st.checkbox(
+        "Enable Offline Mode (Experimental)",
+        value=False,
+        help="Use local STT, TTS, and translation where possible (Vosk, pyttsx3, Argos). Falls back to online services if components missing."
+    )
+    st.session_state["offline_mode_enabled"] = offline_mode_enabled
+    if offline_mode_enabled:
+        if OFFLINE_UTILS_AVAILABLE:
+            caps = initialize_offline_resources()
+            missing = [k for k,v in caps.items() if not v]
+            if missing:
+                st.warning("Offline components missing: " + ", ".join(missing))
+                with st.expander("Offline Setup Instructions"):
+                    st.markdown("""
+**Install optional packages:**
+```
+pip install vosk pyttsx3 argostranslate==1.9.0
+```
+**Vosk model:** Download and place in `models/vosk/en/` (e.g. `vosk-model-small-en-us-0.15`).
+**Argos language packs:** Download `.argosmodel` files and install:
+```
+python -m argostranslate.package install <file.argosmodel>
+```
+""")
+            else:
+                st.success("All offline components initialized.")
+            st.caption("Capabilities: " + capabilities_summary())
+        else:
+            st.error("offline_utils.py not found or failed to import.")
     
     st.divider()
     
@@ -530,9 +595,12 @@ with tab1:
                     st.error(f"Video display error: {str(e)}")
     
     # Input method
+    input_options = ["📝 Type Text", "🎤 Speak"]
+    if OFFLINE_UTILS_AVAILABLE and is_offline_mode():
+        input_options.append("🎤 Offline STT")
     input_method = st.radio(
         "Choose input method:",
-        ["📝 Type Text", "🎤 Speak"],
+        input_options,
         horizontal=True,
         key="chatbot_input_method"
     )
@@ -543,9 +611,14 @@ with tab1:
         
         if input_method == "📝 Type Text":
             user_input = st.text_input("Type your message:", key="chat_input_form")
-        else:
+        elif input_method == "🎤 Speak":
             if st.form_submit_button("🎤 Start Speaking"):
                 recognized_text = speech_to_text()
+                if recognized_text:
+                    st.session_state['recognized_text'] = recognized_text
+        elif input_method == "🎤 Offline STT":
+            if st.form_submit_button("🔌 Start Offline STT"):
+                recognized_text = offline_stt() if (OFFLINE_UTILS_AVAILABLE and is_offline_mode()) else None
                 if recognized_text:
                     st.session_state['recognized_text'] = recognized_text
         

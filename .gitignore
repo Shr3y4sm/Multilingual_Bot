@@ -26,16 +26,26 @@ wheels/
 # Streamlit
 .streamlit/secrets.toml
 
-# Audio/Video files
+# Audio/Video files (generated)
 *.mp3
 *.wav
 *.mp4
 *.avi
 *.mov
+output.mp3
+lip_sync_*.mp4
 
 # Data files
 chat_history.json
 translations.txt
+
+# Offline models (large files)
+models/vosk/
+*.argosmodel
+
+# Generated test files
+check_offline.py
+create_test_avatar.py
 
 # IDE
 .vscode/
