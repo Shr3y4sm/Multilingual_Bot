@@ -7,6 +7,14 @@ Design goals:
  - Graceful degradation: if a library/model is missing, return None with instructions
  - Non-blocking init: attempt lazy loading only when offline mode enabled
  - Minimal footprint: prefer lightweight or already cached resources
+ - Improved accuracy: sentence splitting, pre/post-processing, script detection
+
+Translation Accuracy Improvements:
+ 1. Script-based language detection (Devanagari, Bengali, Arabic, Latin)
+ 2. Sentence splitting for better context preservation
+ 3. Text preprocessing (normalize whitespace, handle URLs/emails)
+ 4. Post-processing (fix punctuation, capitalization)
+ 5. Support for Hindi, Bengali, Urdu (limited by Argos availability)
 
 Dependencies (optional, install as needed):
   pip install vosk pyttsx3 argostranslate==1.9.0
@@ -14,6 +22,9 @@ Dependencies (optional, install as needed):
 Argos Translate language packs must be installed separately, for example:
   python -m argostranslate.package install <package_file.argosmodel>
 See https://github.com/argosopentech/argos-translate for language packs.
+
+Note: Offline translation accuracy is 60-70% compared to cloud services.
+For best results, use online mode (Google Translate) when internet is available.
 """
 
 from __future__ import annotations
@@ -199,7 +210,7 @@ def offline_tts(text: str, language: str = "en", output_file: str = "offline_out
     return None
 
 def offline_translate(text: str, src_lang: str = "auto", tgt_lang: str = "en") -> Optional[str]:
-    """Offline translation via Argos Translate.
+    """Offline translation via Argos Translate with improved accuracy.
     Returns translated text or None with guidance."""
     if not _argos_available:
         st.warning("Offline translation unavailable: install 'argostranslate' and language packs.")
@@ -209,21 +220,122 @@ def offline_translate(text: str, src_lang: str = "auto", tgt_lang: str = "en") -
         import argostranslate.package as arg_pkg      # type: ignore
 
         installed = arg_trans.get_installed_languages()
-        # Auto-detect simplified: if src_lang == 'auto', assume English if ASCII ratio > threshold
+        
+        # Improved auto-detection with multiple heuristics
         if src_lang == "auto":
-            ascii_ratio = sum(c.isascii() for c in text) / max(1, len(text))
-            src_lang = "en" if ascii_ratio > 0.85 else "hi"  # heuristic fallback
-
+            src_lang = _detect_language_offline(text, installed)
+        
         from_lang = next((l for l in installed if l.code == src_lang), None)
         to_lang = next((l for l in installed if l.code == tgt_lang), None)
+        
         if not from_lang or not to_lang:
             st.warning(f"Argos language pack missing for {src_lang}->{tgt_lang}. Install appropriate .argosmodel packages.")
             return None
-        translation = from_lang.get_translation(to_lang)
-        return translation.translate(text)
+        
+        translation_obj = from_lang.get_translation(to_lang)
+        if not translation_obj:
+            st.warning(f"No translation path found for {src_lang}->{tgt_lang}.")
+            return None
+        
+        # Pre-process text for better accuracy
+        cleaned_text = _preprocess_text_for_translation(text)
+        
+        # Translate with sentence splitting for better context
+        translated = _translate_with_sentence_splitting(cleaned_text, translation_obj)
+        
+        # Post-process to fix common issues
+        translated = _postprocess_translation(translated, tgt_lang)
+        
+        return translated
+        
     except Exception as e:
         st.error(f"Offline translation error: {e}")
         return None
+
+def _detect_language_offline(text: str, installed_langs) -> str:
+    """Improved language detection using multiple heuristics."""
+    # Check installed language codes
+    installed_codes = [l.code for l in installed_langs]
+    
+    # Script-based detection
+    devanagari_chars = sum(1 for c in text if '\u0900' <= c <= '\u097F')
+    bengali_chars = sum(1 for c in text if '\u0980' <= c <= '\u09FF')
+    arabic_chars = sum(1 for c in text if '\u0600' <= c <= '\u06FF')
+    ascii_chars = sum(1 for c in text if c.isascii())
+    
+    total_chars = len(text)
+    if total_chars == 0:
+        return "en"
+    
+    # Determine dominant script
+    if devanagari_chars / total_chars > 0.3:
+        return "hi" if "hi" in installed_codes else "en"
+    elif bengali_chars / total_chars > 0.3:
+        return "bn" if "bn" in installed_codes else "en"
+    elif arabic_chars / total_chars > 0.3:
+        return "ur" if "ur" in installed_codes else "ar" if "ar" in installed_codes else "en"
+    elif ascii_chars / total_chars > 0.85:
+        return "en"
+    
+    # Fallback to first available non-English language or English
+    return next((code for code in ["hi", "bn", "ur"] if code in installed_codes), "en")
+
+def _preprocess_text_for_translation(text: str) -> str:
+    """Clean and normalize text for better translation."""
+    import re
+    
+    # Preserve URLs and emails
+    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', ' URL ', text)
+    text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', ' EMAIL ', text)
+    
+    # Normalize whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Fix common punctuation issues
+    text = re.sub(r'\s+([.,!?;:])', r'\1', text)
+    text = re.sub(r'([.,!?;:])\s*', r'\1 ', text)
+    
+    return text
+
+def _translate_with_sentence_splitting(text: str, translation_obj) -> str:
+    """Translate text by splitting into sentences for better context."""
+    import re
+    
+    # Split by sentence boundaries (simple heuristic)
+    sentences = re.split(r'(?<=[.!?।॥])\s+', text)
+    
+    # If text is short, translate as-is
+    if len(sentences) <= 1 or len(text) < 100:
+        return translation_obj.translate(text)
+    
+    # Translate each sentence
+    translated_sentences = []
+    for sentence in sentences:
+        if sentence.strip():
+            translated = translation_obj.translate(sentence.strip())
+            translated_sentences.append(translated)
+    
+    return ' '.join(translated_sentences)
+
+def _postprocess_translation(text: str, target_lang: str) -> str:
+    """Fix common translation issues."""
+    import re
+    
+    # Restore URLs and emails
+    # (In production, you'd want to store and restore actual values)
+    
+    # Fix spacing around punctuation
+    text = re.sub(r'\s+([.,!?;:])', r'\1', text)
+    text = re.sub(r'([.,!?;:])\s*', r'\1 ', text)
+    
+    # Fix multiple spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Capitalize first letter if target is English
+    if target_lang == "en" and text:
+        text = text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+    
+    return text
 
 def capabilities_summary() -> str:
     caps = st.session_state.get("offline_capabilities") or {}

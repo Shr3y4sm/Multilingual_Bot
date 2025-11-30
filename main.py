@@ -771,7 +771,7 @@ with tab3:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray;'>
-    <p>🚀 <b>Animated AI Translator</b> | Powered by Google Gemini AI, NLP, and Neural Machine Translation</p>
+    <p>🚀 <b>Animated AI Translator</b> | Powered by NLP and Neural Machine Translation</p>
     <p>Developed for AICTE Productization Fellowship YUKTI Innovation Challenge 2025</p>
 </div>
 """, unsafe_allow_html=True)

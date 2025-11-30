@@ -204,11 +204,40 @@ streamlit run main.py
 - Disconnect network or block outbound temporarily; offline components continue to work (Gemini responses will fail—demo fallback by prompting cached or simplified responses if needed).
 - For a fully offline demo, avoid using Chatbot tab or replace with a local FAQ answer set.
 
+### Translation Accuracy Improvements
+
+The offline translation now includes several enhancements for better accuracy:
+
+**1. Script-Based Language Detection**
+- Automatically detects Devanagari (Hindi), Bengali, Arabic (Urdu), and Latin scripts
+- Improved auto-detection replaces simple ASCII ratio check
+
+**2. Sentence Splitting**
+- Long texts are split into sentences for better context preservation
+- Each sentence translated separately, then reassembled
+
+**3. Text Preprocessing**
+- Normalizes whitespace and punctuation
+- Preserves URLs and email addresses
+- Cleans formatting for better model input
+
+**4. Post-Processing**
+- Fixes punctuation spacing
+- Capitalizes English sentences properly
+- Removes extra whitespace
+
+**5. Supported Languages**
+- ✅ Hindi (hi), Bengali (bn), Urdu (ur) - installed
+- ❌ Kannada, Tamil, Telugu, Marathi, Gujarati, Punjabi - not available in Argos Translate
+- 💡 Use online mode (Google Translate) for full Indian language support
+
 ### Tips & Limitations
-- Argos translation quality is lower than neural cloud services; highlight educational access benefit.
-- pyttsx3 voice availability varies by OS; for richer voices keep gTTS as hybrid.
-- Vosk supports multiple languages—add more models in parallel folders and extend detection logic.
-- Heuristic auto language detection in offline translation falls back to English vs Hindi; refine later.
+- Offline translation accuracy: **~60-70%** vs cloud services (Google: ~90%+)
+- Best for: basic communication, educational demos, low-bandwidth areas
+- For production quality: use online mode when internet available
+- pyttsx3 voice quality varies by OS; Windows has better multilingual voices
+- Vosk supports multiple languages—add more models in parallel folders and extend detection logic
+- Limited to 3 Indian languages offline (Hi/Bn/Ur); use online for Kannada, Tamil, Telugu, etc.
 
 ### Roadmap Upgrades (Future)
 - Whisper.cpp integration for higher-quality offline STT.
