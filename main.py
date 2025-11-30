@@ -340,7 +340,7 @@ def text_to_speech(text, language, enable_lip_sync=True, auto_generate=True, ai_
                     avatar_id = os.getenv("ELAI_AVATAR_ID", "")
                 
                 api_name = api_provider.upper() if use_api else "Local"
-                with st.spinner(f"🎬 Generating {detected_expression} expression with lip sync..." + (f" (via {api_name} API)" if use_api else "")):
+                with st.spinner(f"🎬 Generating {detected_expression} expression with lip sync..." + (f" (via {api_name})" if use_api else "")):
                     # Use absolute path for output
                     lip_sync_output = os.path.abspath(f"lip_sync_{st.session_state.session_id}_{datetime.now().strftime('%H%M%S')}.mp4")
                     result = create_lip_sync_video(
