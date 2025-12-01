@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-12-01T20:07:30.003164",
+  "timestamp": "2025-12-01T20:16:44.292263",
   "tests": [
     {
       "system": "Our System (Offline)",
@@ -8,7 +8,7 @@
       "successful": 5,
       "errors": 0,
       "bleu_score": 0.76,
-      "avg_time_seconds": 1.79,
+      "avg_time_seconds": 1.78,
       "samples": [
         {
           "source": "Hello, how are you?",
@@ -34,7 +34,7 @@
       "successful": 5,
       "errors": 0,
       "bleu_score": 1.0,
-      "avg_time_seconds": 0.84,
+      "avg_time_seconds": 0.75,
       "samples": [
         {
           "source": "Hello, how are you?",
@@ -60,7 +60,7 @@
       "successful": 3,
       "errors": 0,
       "bleu_score": 0.0,
-      "avg_time_seconds": 0.13,
+      "avg_time_seconds": 0.14,
       "samples": [
         {
           "source": "Good morning",
@@ -86,7 +86,7 @@
       "successful": 3,
       "errors": 0,
       "bleu_score": 0.0,
-      "avg_time_seconds": 0.66,
+      "avg_time_seconds": 0.72,
       "samples": [
         {
           "source": "Good morning",

@@ -45,6 +45,7 @@ _vosk_samplerate = 16000
 _pyttsx3_engine = None
 _pyttsx3_voices_cache = None  # Cache voice metadata to avoid repeated enumeration
 _argos_languages_cache = None  # Cache installed Argos languages to avoid repeated queries
+_translation_cache = {}  # Cache recent translations for speed
 
 def initialize_offline_resources():
     """Attempt to initialize offline components.
@@ -140,7 +141,10 @@ def offline_stt(timeout: int = 8) -> Optional[str]:
         from vosk import KaldiRecognizer  # type: ignore
         import json as _json
 
+        # Use larger buffer and enable partial results for better accuracy
         recognizer = KaldiRecognizer(_vosk_model, _vosk_samplerate)
+        recognizer.SetWords(True)  # Enable word-level timestamps for better accuracy
+        
         pa = pyaudio.PyAudio()
         stream = pa.open(format=pyaudio.paInt16, channels=1, rate=_vosk_samplerate, input=True, frames_per_buffer=4096)
         stream.start_stream()
@@ -242,12 +246,20 @@ def offline_translate(text: str, src_lang: str = "auto", tgt_lang: str = "en") -
     try:
         import argostranslate.translate as arg_trans  # type: ignore
 
+        # Check cache first (for exact matches)
+        cache_key = f"{src_lang}:{tgt_lang}:{text[:100]}"  # Use first 100 chars as key
+        if cache_key in _translation_cache:
+            return _translation_cache[cache_key]
+
         # Use cached languages if available, otherwise query
         installed = _argos_languages_cache if _argos_languages_cache else arg_trans.get_installed_languages()
         
         # Fast path: skip heavy preprocessing for very short text
         if len(text) < 50:
             cleaned_text = text.strip()
+            # Quick auto-detect for short text
+            if src_lang == "auto":
+                src_lang = _detect_language_offline(text, installed)
         else:
             # Improved auto-detection with multiple heuristics
             if src_lang == "auto":
@@ -270,7 +282,13 @@ def offline_translate(text: str, src_lang: str = "auto", tgt_lang: str = "en") -
                     translated = translation_obj.translate(cleaned_text)
                 else:
                     translated = _translate_with_sentence_splitting(cleaned_text, translation_obj)
-                return _postprocess_translation(translated, tgt_lang)
+                result = _postprocess_translation(translated, tgt_lang)
+                
+                # Cache result (limit cache size to 100 entries)
+                if len(_translation_cache) < 100:
+                    _translation_cache[cache_key] = result
+                
+                return result
 
         # If direct path missing, attempt pivot via English
         pivot_code = "en"
@@ -392,6 +410,19 @@ def _postprocess_translation(text: str, target_lang: str) -> str:
     
     # Fix multiple spaces
     text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Remove duplicate words (common Argos issue)
+    text = re.sub(r'\b(\w+)\s+\1\b', r'\1', text, flags=re.IGNORECASE)
+    
+    # Fix common Devanagari punctuation issues
+    if target_lang in ["hi", "mr", "ne"]:
+        text = text.replace(' ।', '।')  # Fix Hindi full stop spacing
+        text = text.replace('  ', ' ')
+    
+    # Fix common Bengali punctuation
+    if target_lang == "bn":
+        text = text.replace(' ।', '।')
+        text = text.replace('  ', ' ')
     
     # Capitalize first letter if target is English
     if target_lang == "en" and text:
