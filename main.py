@@ -77,8 +77,8 @@ if 'last_expression' not in st.session_state:
     st.session_state.last_expression = None  # Last detected expression
 if 'clear_input' not in st.session_state:
     st.session_state.clear_input = False  # Flag to clear input on next render
-if 'clear_input' not in st.session_state:
-    st.session_state.clear_input = False  # Flag to clear input on next render
+if 'translation_result' not in st.session_state:
+    st.session_state.translation_result = None  # Store translation for persistence
 
 def initialize_gemini():
     """Initialize Google Gemini AI"""
@@ -378,9 +378,11 @@ def text_to_speech(text, language, enable_lip_sync=True, auto_generate=True, ai_
             video_to_show = os.path.abspath(ASSISTANT_VIDEO_PATH)
         
         # Store in session state for persistence across reruns
+        # Always store audio path if audio file exists
+        if os.path.exists(audio_file):
+            st.session_state.last_audio_path = audio_file
         if video_to_show:
             st.session_state.last_video_path = video_to_show
-            st.session_state.last_audio_path = audio_file
             st.session_state.last_expression = detected_expression
         
         # Display video and audio in columns
@@ -441,6 +443,10 @@ def translate_text(text, target_lang):
             if offline_result:
                 save_translation(text, offline_result, "auto-detected-offline", target_lang)
                 return offline_result
+            else:
+                # In offline mode, don't fall back to online service
+                st.warning("⚠️ Offline translation unavailable for this language pair. Install language packs or switch to online mode.")
+                return None
         translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
         save_translation(text, translated, "auto-detected", target_lang)
         return translated
@@ -716,13 +722,55 @@ with tab2:
                 translated_text = translate_text(text, target_lang)
             
             if translated_text:
-                st.success(f"✅ **Translated Text ({SUPPORTED_LANGUAGES[target_lang]}):**")
-                st.info(translated_text)
+                # Store in session state for persistence
+                st.session_state.translation_result = {
+                    'text': translated_text,
+                    'language': target_lang,
+                    'language_name': SUPPORTED_LANGUAGES[target_lang]
+                }
                 # Auto-generate with emotion detection
+                # In offline mode, skip video generation for faster response
+                skip_video = OFFLINE_UTILS_AVAILABLE and is_offline_mode()
                 text_to_speech(translated_text, target_lang, 
-                             enable_lip_sync=enable_lip_sync,
+                             enable_lip_sync=(enable_lip_sync and not skip_video),
                              auto_generate=True,
                              ai_model=gemini_model)
+                st.rerun()
+        
+        # Display translation result persistently
+        if st.session_state.translation_result:
+            result = st.session_state.translation_result
+            st.success(f"✅ **Translated Text ({result['language_name']}):**")
+            st.info(result['text'])
+            
+            # Display audio (always show if available)
+            audio_path = st.session_state.get('last_audio_path')
+            if audio_path and os.path.exists(audio_path):
+                st.audio(audio_path, format="audio/mp3", autoplay=True)
+            elif os.path.exists("output.mp3"):
+                # Fallback: directly use output.mp3 if session state is not set
+                st.audio("output.mp3", format="audio/mp3", autoplay=True)
+            
+            # Display video if available
+            if st.session_state.last_video_path and os.path.exists(st.session_state.last_video_path):
+                col1, col2 = st.columns([3, 1])
+                with col2:
+                    try:
+                        st.video(st.session_state.last_video_path, autoplay=False)
+                        if st.session_state.last_expression:
+                            emoji_map = {
+                                "happy": "😊", "sad": "😢", "surprised": "😲", 
+                                "thinking": "🤔", "confident": "💪", "neutral": "😐"
+                            }
+                            emoji = emoji_map.get(st.session_state.last_expression, "😊")
+                            st.caption(f"Expression: {st.session_state.last_expression} {emoji}")
+                    except Exception as e:
+                        st.error(f"Display error: {str(e)}")
+            
+            # Clear button
+            if st.button("🗑️ Clear Translation"):
+                st.session_state.translation_result = None
+                st.rerun()
 
 # Tab 3: Analytics
 with tab3:

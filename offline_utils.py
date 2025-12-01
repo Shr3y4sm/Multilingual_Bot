@@ -43,13 +43,15 @@ _argos_available = False
 _vosk_model = None
 _vosk_samplerate = 16000
 _pyttsx3_engine = None
+_pyttsx3_voices_cache = None  # Cache voice metadata to avoid repeated enumeration
+_argos_languages_cache = None  # Cache installed Argos languages to avoid repeated queries
 
 def initialize_offline_resources():
     """Attempt to initialize offline components.
 
     Sets session_state flags for availability and returns a summary dict.
     Safe to call multiple times (idempotent)."""
-    global _vosk_available, _pyttsx3_available, _argos_available, _vosk_model, _pyttsx3_engine
+    global _vosk_available, _pyttsx3_available, _argos_available, _vosk_model, _pyttsx3_engine, _pyttsx3_voices_cache, _argos_languages_cache
 
     summary = {"vosk": False, "pyttsx3": False, "argos": False}
     
@@ -94,6 +96,8 @@ def initialize_offline_resources():
         try:
             import pyttsx3  # type: ignore
             _pyttsx3_engine = pyttsx3.init()
+            # Cache voice metadata during initialization to speed up TTS calls
+            _pyttsx3_voices_cache = _pyttsx3_engine.getProperty("voices")
             _pyttsx3_available = True
             summary["pyttsx3"] = True
         except Exception as e:
@@ -107,9 +111,10 @@ def initialize_offline_resources():
         try:
             import argostranslate.translate  # type: ignore
             import argostranslate.package    # type: ignore
-            # Verify at least one language is installed
+            # Verify at least one language is installed and cache them
             langs = argostranslate.translate.get_installed_languages()
             if len(langs) > 0:
+                _argos_languages_cache = langs  # Cache for reuse
                 _argos_available = True
                 summary["argos"] = True
             else:
@@ -172,8 +177,8 @@ def offline_tts(text: str, language: str = "en", output_file: str = "offline_out
         st.warning("Offline TTS unavailable: install 'pyttsx3'.")
         return None
     try:
-        # Attempt language voice selection heuristic
-        voices = _pyttsx3_engine.getProperty("voices")
+        # Use cached voices to avoid slow enumeration on every call
+        voices = _pyttsx3_voices_cache if _pyttsx3_voices_cache else _pyttsx3_engine.getProperty("voices")
         target_voice = None
         lang_map_pref = {
             "en": ["en", "English"],
@@ -194,17 +199,34 @@ def offline_tts(text: str, language: str = "en", output_file: str = "offline_out
             "ar": ["ar", "Arabic"],
         }
         prefs = lang_map_pref.get(language, [])
-        for v in voices:
-            meta = f"{v.id} {getattr(v, 'name', '')} {getattr(v, 'languages', '')}".lower()
-            if any(p.lower() in meta for p in prefs):
-                target_voice = v.id
-                break
+        if prefs and voices:
+            for v in voices:
+                meta = f"{v.id} {getattr(v, 'name', '')} {getattr(v, 'languages', '')}".lower()
+                if any(p.lower() in meta for p in prefs):
+                    target_voice = v.id
+                    break
         if target_voice:
             _pyttsx3_engine.setProperty("voice", target_voice)
+        
+        # Clear any pending queue and save audio
+        _pyttsx3_engine.stop()  # Clear previous state
         _pyttsx3_engine.save_to_file(text, output_file)
         _pyttsx3_engine.runAndWait()
-        if os.path.exists(output_file):
-            return output_file
+        
+        # Verify file exists and has content
+        import time
+        max_wait = 3  # Wait up to 3 seconds for file
+        for _ in range(max_wait * 10):
+            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                return output_file
+            time.sleep(0.1)
+        
+        # If file still not ready, report error
+        if not os.path.exists(output_file):
+            st.warning(f"Offline TTS: Audio file not generated. Check pyttsx3 setup.")
+        elif os.path.getsize(output_file) == 0:
+            st.warning(f"Offline TTS: Audio file empty. Voice may not be available for {language}.")
+        return None
     except Exception as e:
         st.error(f"Offline TTS error: {e}")
     return None
@@ -219,27 +241,36 @@ def offline_translate(text: str, src_lang: str = "auto", tgt_lang: str = "en") -
         return None
     try:
         import argostranslate.translate as arg_trans  # type: ignore
-        import argostranslate.package as arg_pkg      # type: ignore
 
-        installed = arg_trans.get_installed_languages()
+        # Use cached languages if available, otherwise query
+        installed = _argos_languages_cache if _argos_languages_cache else arg_trans.get_installed_languages()
         
-        # Improved auto-detection with multiple heuristics
+        # Fast path: skip heavy preprocessing for very short text
+        if len(text) < 50:
+            cleaned_text = text.strip()
+        else:
+            # Improved auto-detection with multiple heuristics
+            if src_lang == "auto":
+                src_lang = _detect_language_offline(text, installed)
+            cleaned_text = _preprocess_text_for_translation(text)
+        
+        # Quick lookup for source and target languages
         if src_lang == "auto":
             src_lang = _detect_language_offline(text, installed)
-        
+            
         from_lang = next((l for l in installed if l.code == src_lang), None)
         to_lang = next((l for l in installed if l.code == tgt_lang), None)
-
-        # Pre-process text for better accuracy
-        cleaned_text = _preprocess_text_for_translation(text)
 
         # Try direct translation first
         if from_lang and to_lang:
             translation_obj = from_lang.get_translation(to_lang)
             if translation_obj:
-                translated = _translate_with_sentence_splitting(cleaned_text, translation_obj)
-                translated = _postprocess_translation(translated, tgt_lang)
-                return translated
+                # Fast path: short text translates directly
+                if len(cleaned_text) < 100:
+                    translated = translation_obj.translate(cleaned_text)
+                else:
+                    translated = _translate_with_sentence_splitting(cleaned_text, translation_obj)
+                return _postprocess_translation(translated, tgt_lang)
 
         # If direct path missing, attempt pivot via English
         pivot_code = "en"
@@ -318,20 +349,15 @@ def _translate_with_sentence_splitting(text: str, translation_obj) -> str:
     """Translate text by splitting into sentences for better context."""
     import re
     
-    # Split by sentence boundaries (simple heuristic)
-    sentences = re.split(r'(?<=[.!?।॥])\s+', text)
+    # Split by sentence boundaries (simple heuristic) - limit to 3 sentences max for speed
+    sentences = re.split(r'(?<=[.!?।॥])\s+', text, maxsplit=3)
     
-    # If text is short, translate as-is
-    if len(sentences) <= 1 or len(text) < 100:
+    # If only one sentence or very short, translate as-is
+    if len(sentences) <= 1:
         return translation_obj.translate(text)
     
-    # Translate each sentence
-    translated_sentences = []
-    for sentence in sentences:
-        if sentence.strip():
-            translated = translation_obj.translate(sentence.strip())
-            translated_sentences.append(translated)
-    
+    # Translate each sentence (limited batch)
+    translated_sentences = [translation_obj.translate(s.strip()) for s in sentences if s.strip()]
     return ' '.join(translated_sentences)
 
 def _translate_via_pivot(text: str, from_lang, pivot_lang, to_lang) -> Optional[str]:
