@@ -15,3 +15,8 @@ vosk>=0.3.45
 pyttsx3>=2.90
 argostranslate==1.9.0
 
+# Benchmarking (optional)
+sacrebleu>=2.3.1
+jiwer>=3.0.0
+deepl>=1.16.0
+

@@ -1,0 +1,115 @@
+{
+  "timestamp": "2025-12-01T20:07:30.003164",
+  "tests": [
+    {
+      "system": "Our System (Offline)",
+      "language_pair": "en->hi",
+      "test_cases": 5,
+      "successful": 5,
+      "errors": 0,
+      "bleu_score": 0.76,
+      "avg_time_seconds": 1.79,
+      "samples": [
+        {
+          "source": "Hello, how are you?",
+          "reference": "नमस्ते, आप कैसे हैं?",
+          "hypothesis": "नमस्कार, आप कैसे हैं?"
+        },
+        {
+          "source": "What is your name?",
+          "reference": "आपका नाम क्या है?",
+          "hypothesis": "आपका नाम क्या है?"
+        },
+        {
+          "source": "I am learning Hindi.",
+          "reference": "मैं हिंदी सीख रहा हूं।",
+          "hypothesis": "मैं हिंदी सीख रहा हूँ।"
+        }
+      ]
+    },
+    {
+      "system": "Google Translate",
+      "language_pair": "en->hi",
+      "test_cases": 5,
+      "successful": 5,
+      "errors": 0,
+      "bleu_score": 1.0,
+      "avg_time_seconds": 0.84,
+      "samples": [
+        {
+          "source": "Hello, how are you?",
+          "reference": "नमस्ते, आप कैसे हैं?",
+          "hypothesis": "नमस्ते, आप कैसे हैं?"
+        },
+        {
+          "source": "What is your name?",
+          "reference": "आपका नाम क्या है?",
+          "hypothesis": "आपका क्या नाम है?"
+        },
+        {
+          "source": "I am learning Hindi.",
+          "reference": "मैं हिंदी सीख रहा हूं।",
+          "hypothesis": "मैं हिंदी सीख रहा हूं."
+        }
+      ]
+    },
+    {
+      "system": "Our System (Offline)",
+      "language_pair": "en->bn",
+      "test_cases": 3,
+      "successful": 3,
+      "errors": 0,
+      "bleu_score": 0.0,
+      "avg_time_seconds": 0.13,
+      "samples": [
+        {
+          "source": "Good morning",
+          "reference": "সুপ্রভাত",
+          "hypothesis": "শুভ সকাল"
+        },
+        {
+          "source": "How much does this cost?",
+          "reference": "এটার দাম কত?",
+          "hypothesis": "এটার দাম কত?"
+        },
+        {
+          "source": "I need help",
+          "reference": "আমার সাহায্য দরকার",
+          "hypothesis": "আমার সাহায্য দরকার"
+        }
+      ]
+    },
+    {
+      "system": "Google Translate",
+      "language_pair": "en->bn",
+      "test_cases": 3,
+      "successful": 3,
+      "errors": 0,
+      "bleu_score": 0.0,
+      "avg_time_seconds": 0.66,
+      "samples": [
+        {
+          "source": "Good morning",
+          "reference": "সুপ্রভাত",
+          "hypothesis": "শুভ সকাল"
+        },
+        {
+          "source": "How much does this cost?",
+          "reference": "এটার দাম কত?",
+          "hypothesis": "এই খরচ কত?"
+        },
+        {
+          "source": "I need help",
+          "reference": "আমার সাহায্য দরকার",
+          "hypothesis": "আমার সাহায্য দরকার"
+        }
+      ]
+    },
+    {
+      "test": "ASR Accuracy",
+      "test_cases": 3,
+      "word_error_rate": 13.3,
+      "accuracy": 86.7
+    }
+  ]
+}
