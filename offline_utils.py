@@ -211,6 +211,8 @@ def offline_tts(text: str, language: str = "en", output_file: str = "offline_out
 
 def offline_translate(text: str, src_lang: str = "auto", tgt_lang: str = "en") -> Optional[str]:
     """Offline translation via Argos Translate with improved accuracy.
+    - Tries direct src→tgt
+    - Falls back to pivot via English (src→en→tgt) when available
     Returns translated text or None with guidance."""
     if not _argos_available:
         st.warning("Offline translation unavailable: install 'argostranslate' and language packs.")
@@ -227,26 +229,41 @@ def offline_translate(text: str, src_lang: str = "auto", tgt_lang: str = "en") -
         
         from_lang = next((l for l in installed if l.code == src_lang), None)
         to_lang = next((l for l in installed if l.code == tgt_lang), None)
-        
-        if not from_lang or not to_lang:
-            st.warning(f"Argos language pack missing for {src_lang}->{tgt_lang}. Install appropriate .argosmodel packages.")
-            return None
-        
-        translation_obj = from_lang.get_translation(to_lang)
-        if not translation_obj:
-            st.warning(f"No translation path found for {src_lang}->{tgt_lang}.")
-            return None
-        
+
         # Pre-process text for better accuracy
         cleaned_text = _preprocess_text_for_translation(text)
-        
-        # Translate with sentence splitting for better context
-        translated = _translate_with_sentence_splitting(cleaned_text, translation_obj)
-        
-        # Post-process to fix common issues
-        translated = _postprocess_translation(translated, tgt_lang)
-        
-        return translated
+
+        # Try direct translation first
+        if from_lang and to_lang:
+            translation_obj = from_lang.get_translation(to_lang)
+            if translation_obj:
+                translated = _translate_with_sentence_splitting(cleaned_text, translation_obj)
+                translated = _postprocess_translation(translated, tgt_lang)
+                return translated
+
+        # If direct path missing, attempt pivot via English
+        pivot_code = "en"
+        pivot_lang = next((l for l in installed if l.code == pivot_code), None)
+        if from_lang and to_lang and pivot_lang and from_lang != to_lang:
+            pivot_result = _translate_via_pivot(cleaned_text, from_lang, pivot_lang, to_lang)
+            if pivot_result is not None:
+                return _postprocess_translation(pivot_result, tgt_lang)
+
+        # Otherwise, provide guidance on missing packs
+        missing = []
+        if not from_lang:
+            missing.append(src_lang)
+        if not to_lang:
+            missing.append(tgt_lang)
+        if missing:
+            st.warning(
+                f"Argos language pack missing for {', '.join(missing)}. Install appropriate .argosmodel packages."
+            )
+        else:
+            st.warning(
+                f"No translation path found for {src_lang}->{tgt_lang}. Try installing src→en and en→tgt packs, or use online mode."
+            )
+        return None
         
     except Exception as e:
         st.error(f"Offline translation error: {e}")
@@ -316,6 +333,25 @@ def _translate_with_sentence_splitting(text: str, translation_obj) -> str:
             translated_sentences.append(translated)
     
     return ' '.join(translated_sentences)
+
+def _translate_via_pivot(text: str, from_lang, pivot_lang, to_lang) -> Optional[str]:
+    """Attempt two-hop translation via a pivot language (usually English).
+    Returns translated text or None if either hop is unavailable."""
+    try:
+        # First hop: from -> pivot
+        hop1 = from_lang.get_translation(pivot_lang)
+        if not hop1:
+            return None
+        intermediate = _translate_with_sentence_splitting(text, hop1)
+
+        # Second hop: pivot -> to
+        hop2 = pivot_lang.get_translation(to_lang)
+        if not hop2:
+            return None
+        final = _translate_with_sentence_splitting(intermediate, hop2)
+        return final
+    except Exception:
+        return None
 
 def _postprocess_translation(text: str, target_lang: str) -> str:
     """Fix common translation issues."""
