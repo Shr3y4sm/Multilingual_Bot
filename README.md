@@ -283,10 +283,6 @@ Animated-AI-translator/
 - Update `ASSISTANT_VIDEO_PATH` for custom avatar
 - Adjust intent detection patterns in `detect_intent()` function
 
-## 🎯 Features for Presentation
-
-### For AICTE Productization Fellowship YUKTI Innovation Challenge 2025
-
 1. **AI-Powered Chatbot**
    - Context-aware conversations
    - Intent detection and classification
@@ -312,36 +308,5 @@ Animated-AI-translator/
    - Intent analysis
    - Language distribution
 
-## 📝 Notes
-
-- Ensure stable internet connection for API calls
-- Microphone access required for voice input
-- Google Gemini API has rate limits (free tier available)
-- Avatar video is optional but enhances user experience
-
-## 🤝 Contributing
-
-This project is developed for AICTE Productization Fellowship YUKTI Innovation Challenge 2025.
-
-## 📄 License
-
-This project is developed for academic and research purposes.
-
-## 👥 Authors
-
 Developed for AICTE Productization Fellowship YUKTI Innovation Challenge 2025 - Institution's Innovation Council (IIC), AICTE 2nd Stage Evaluation.
 
-## 🙏 Acknowledgments
-
-- Google Gemini AI for conversational AI capabilities
-- Google Translator API for translation services
-- Streamlit for the web framework
-- Open source community for various libraries
-
----
-
-**Status**: ✅ Production Ready for Presentation
-
-**Version**: 2.0.0
-
-**Last Updated**: 2025
